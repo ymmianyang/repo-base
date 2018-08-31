@@ -17,7 +17,7 @@
     },
     {
         text = "重置数据",
-        tip = "说明`为了加快载入速度，有爱修改HandyNotes每个版本只查询一次数据，把数据保存起来，如果有问题请重置一下",
+        tip = "说明`为了加快载入速度，爱不易修改HandyNotes每个版本只查询一次数据，把数据保存起来，如果有问题请重置一下",
         reload = 1,
         callback = function()
             HandyNotesDB._mapData = nil
@@ -36,10 +36,17 @@ U1RegisterAddon("HandyNotes_DraenorTreasures", {
 
 U1RegisterAddon("HandyNotes_LegionRaresTreasures", {
     title = "军团再临地图宝箱",
-    defaultEnable = 1,
+    defaultEnable = 0,
     load = "LATER",
     desc = "在军团再临地图上显示宝藏和稀有精英的位置, 数据量很大, 可能会造成卡顿, 请在需要时开启.",
     modifier = "Vincero@NGA汉化",
+})
+
+U1RegisterAddon("HandyNotes_BattleForAzerothTreasures", {
+    title = "争霸艾酱地图宝箱",
+    defaultEnable = 1,
+    load = "LATER",
+    desc = "在8.0新地图上显示宝藏和稀有精英的位置, 数据量很大, 可能会造成卡顿, 请在需要时开启.",
 })
 
 U1RegisterAddon("HandyNotes_SuramarTelemancy", {

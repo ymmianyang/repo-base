@@ -41,6 +41,8 @@ local worldFramePOIs = WorldMapFrame.BorderFrame
 local ff = WorldQuestTrackerFinderFrame
 local rf = WorldQuestTrackerRareFrame
 
+local UpdateDebug = false
+
 local ZoneWidgetPool = WorldQuestTracker.ZoneWidgetPool
 
 local clear_widget = function (self)
@@ -73,14 +75,21 @@ end
 
 
 -- ~zoneicon ~create
-function WorldQuestTracker.CreateZoneWidget (index, name, parent) --~zone
+function WorldQuestTracker.CreateZoneWidget (index, name, parent, pinTemplate) --~zone
 
-	--local button = CreateFrame ("button", name .. index, parent)
-	local anchorFrame = CreateFrame ("frame", name .. index .. "Anchor", parent, WorldQuestTracker.DataProvider:GetPinTemplate())
-	anchorFrame.dataProvider = WorldQuestTracker.DataProvider
-	anchorFrame.worldQuest = true
-	anchorFrame.owningMap = WorldQuestTracker.DataProvider:GetMap()
-	--anchorFrame:SetSize (1, 1)
+	local anchorFrame
+	
+	if (pinTemplate) then
+		anchorFrame = CreateFrame ("frame", name .. index .. "Anchor", parent, pinTemplate)
+		anchorFrame.dataProvider = WorldQuestTracker.DataProvider
+		anchorFrame.worldQuest = true
+		anchorFrame.owningMap = WorldQuestTracker.DataProvider:GetMap()
+	else
+		anchorFrame = CreateFrame ("frame", name .. index .. "Anchor", parent, WorldQuestTracker.DataProvider:GetPinTemplate())
+		anchorFrame.dataProvider = WorldQuestTracker.DataProvider
+		anchorFrame.worldQuest = true
+		anchorFrame.owningMap = WorldQuestTracker.DataProvider:GetMap()
+	end
 	
 	local button = CreateFrame ("button", name .. index, parent)
 	button:SetPoint ("center", anchorFrame, "center", 0, 0)
@@ -100,6 +109,8 @@ function WorldQuestTracker.CreateZoneWidget (index, name, parent) --~zone
 	supportFrame:SetSize (20, 20)
 	button.SupportFrame = supportFrame
 	
+	button.UpdateTooltip = TaskPOI_OnEnter
+	--> looks like something is triggering the tooltip to update on tick
 	button.UpdateTooltip = TaskPOI_OnEnter
 	button.worldQuest = true
 	button.ClearWidget = clear_widget
@@ -381,6 +392,8 @@ function WorldQuestTracker.UpdateZoneWidgetAnchors()
 	end
 end
 
+local quest_bugged = {}
+
 --atualiza as quest do mapa da zona ~updatezone ~zoneupdate
 function WorldQuestTracker.UpdateZoneWidgets (forceUpdate)
 	
@@ -573,12 +586,7 @@ function WorldQuestTracker.UpdateZoneWidgets (forceUpdate)
 								if (timeLeft == 1) then
 									--let the default UI show the icon if the time is mess off
 									widget:Hide()
-									
-									local defaultPin = WorldQuestTracker.GetDefaultPinForQuest (questID)
-									if (defaultPin) then
-										defaultPin:Show()
-										WorldQuestTracker.ShowDefaultWorldQuestPin [questID] = true
-									end
+									WorldQuestTracker.ShowDefaultPinForQuest (questID)
 								end
 								
 							else
@@ -616,27 +624,36 @@ function WorldQuestTracker.UpdateZoneWidgets (forceUpdate)
 							if (not filter) then
 								--> if WTQ didn't identify the quest type, allow the default interface to show this quest
 								--> this is a safety measure with bugs or new quest types
-								local defaultPin = WorldQuestTracker.GetDefaultPinForQuest (questID)
-								if (defaultPin) then
-									defaultPin:Show()
-									WorldQuestTracker.ShowDefaultWorldQuestPin [questID] = true
-								end
+								WorldQuestTracker.ShowDefaultPinForQuest (questID)
 								
 							end
 						end --pass filters
 						
+					else
+						--show blizzard pin if the quest has an invalid time left
+						WorldQuestTracker.ShowDefaultPinForQuest (questID)
 					end --time left
 					
 				end --is world quest
 				
 			else --have quest data
-			
-				questFailed = true
-				WorldQuestTracker.ScheduleZoneMapUpdate (1, true)
+				if (UpdateDebug) then print ("NeedUpdate 1") end
+				quest_bugged [questID] = (quest_bugged [questID] or 0) + 1
+				
+				if (quest_bugged [questID] <= 2) then
+					questFailed = true
+					C_TaskQuest.RequestPreloadRewardData (questID)
+					WorldQuestTracker.ScheduleZoneMapUpdate (1, true)
+				end
+				
+				--show blizzard pin if the client doesn't have the quest data yet
+				WorldQuestTracker.ShowDefaultPinForQuest (questID)
 			end
-		end
+			
+		end --end foreach taskinfo
 		
 		if (needAnotherUpdate) then
+			if (UpdateDebug) then print ("NeedUpdate 2") end
 			WorldQuestTracker.ScheduleZoneMapUpdate (0.5, true)
 		end
 		
@@ -653,6 +670,7 @@ function WorldQuestTracker.UpdateZoneWidgets (forceUpdate)
 			WorldQuestTracker.LastZoneUpdate = GetTime()
 		end
 	else
+		if (UpdateDebug) then print ("NeedUpdate 3") end
 		WorldQuestTracker.ScheduleZoneMapUpdate (3)
 	end
 	
@@ -933,6 +951,7 @@ function WorldQuestTracker.SetupWorldQuestButton (self, worldQuestType, rarity, 
 			end
 			
 			if (not okay) then
+				if (UpdateDebug) then print ("NeedUpdate 4") end
 				WorldQuestTracker.ScheduleZoneMapUpdate()
 			end
 		else
@@ -942,6 +961,7 @@ function WorldQuestTracker.SetupWorldQuestButton (self, worldQuestType, rarity, 
 		end
 		
 	else
+		if (UpdateDebug) then print ("NeedUpdate 5") end
 		WorldQuestTracker.ScheduleZoneMapUpdate()
 	end
 end
@@ -1292,12 +1312,11 @@ if (bountyBoard) then
 			widgetButton.CriteriaAnimation.LastPlay = 0
 		end
 	end)
-
-	hooksecurefunc (bountyBoard, "RefreshBountyTabs", function (self, mapID)
+	
+	local UpdateBountyBoard = function (self, mapID)
 		local tabs = self.bountyTabPool
 		
 		for bountyIndex, bounty in ipairs(self.bounties) do
-			
 			local bountyButton
 			for button, _ in pairs (tabs.activeObjects) do
 				if (button.bountyIndex == bountyIndex) then
@@ -1314,6 +1333,16 @@ if (bountyBoard) then
 				bountyButton.objectiveCompletedBackground:SetPoint ("bottom", bountyButton, "top", 0, -1)
 				bountyButton.objectiveCompletedBackground:SetTexture ([[Interface\AddOns\WorldQuestTracker\media\background_blackgradientT]])
 				bountyButton.objectiveCompletedBackground:SetSize (42, 12)
+				
+				bountyButton.objectiveCompletedText:Hide()
+				bountyButton.objectiveCompletedBackground:Hide()
+				
+				local animationHub = WorldQuestTracker:CreateAnimationHub (bountyButton, function() bountyButton.objectiveCompletedText:Show(); bountyButton.objectiveCompletedBackground:Show() end)
+				local a = WorldQuestTracker:CreateAnimation (animationHub, "ALPHA", 1, .4, 0, 1)
+				a:SetTarget (bountyButton.objectiveCompletedText)
+				local b = WorldQuestTracker:CreateAnimation (animationHub, "ALPHA", 1, .4, 0, 0.4)
+				b:SetTarget (bountyButton.objectiveCompletedBackground)
+				bountyButton.objectiveCompletedAnimation = animationHub
 			end
 			
 			local numCompleted, numTotal = self:CalculateBountySubObjectives (bounty)
@@ -1321,12 +1350,33 @@ if (bountyBoard) then
 			if (numCompleted) then
 				bountyButton.objectiveCompletedText:SetText (numCompleted .. "/" .. numTotal)
 				bountyButton.objectiveCompletedBackground:SetAlpha (.4)
+				
+				if (not bountyButton.objectiveCompletedText:IsShown()) then
+					bountyButton.objectiveCompletedAnimation:Play()
+				end
 			else
 				bountyButton.objectiveCompletedText:SetText ("")
 				bountyButton.objectiveCompletedBackground:SetAlpha (0)
 			end
+			
+			bountyButton.lastUpdateByWQT = GetTime()
 		end
 		
+		for button, _ in pairs (tabs.activeObjects) do
+			--> check if the button got an update on this execution
+			if (not button.lastUpdateByWQT or button.lastUpdateByWQT+1 < GetTime()) then
+				--> check if the button was been customized by WQT
+				if (button.objectiveCompletedBackground) then
+					button.objectiveCompletedText:SetText ("")
+					button.objectiveCompletedBackground:SetAlpha (0)
+				end
+			end
+		end
+		
+	end
+	
+	hooksecurefunc (bountyBoard, "RefreshBountyTabs", function (self, mapID)
+		C_Timer.After (1, function() UpdateBountyBoard (self, mapID) end)
 	end)
 end
 

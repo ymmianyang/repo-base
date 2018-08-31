@@ -196,7 +196,7 @@ function WorldQuestTracker.IsASubLevel()
 	--end
 end
 
-function WorldQuestTracker.GetOrLoadQuestData (questID, canCache)
+function WorldQuestTracker.GetOrLoadQuestData (questID, canCache, dontCatchAP)
 	local data = WorldQuestTracker.CachedQuestData [questID]
 	if (data) then
 		return unpack (data)
@@ -206,8 +206,11 @@ function WorldQuestTracker.GetOrLoadQuestData (questID, canCache)
 	local gold, goldFormated = WorldQuestTracker.GetQuestReward_Gold (questID)
 	local rewardName, rewardTexture, numRewardItems = WorldQuestTracker.GetQuestReward_Resource (questID)
 	local title, factionID, tagID, tagName, worldQuestType, rarity, isElite, tradeskillLineIndex = WorldQuestTracker.GetQuest_Info (questID)
-
-	local itemName, itemTexture, itemLevel, quantity, quality, isUsable, itemID, isArtifact, artifactPower, isStackable, stackAmount = WorldQuestTracker.GetQuestReward_Item (questID)
+	
+	local itemName, itemTexture, itemLevel, quantity, quality, isUsable, itemID, isArtifact, artifactPower, isStackable, stackAmount
+	if (not dontCatchAP) then
+		itemName, itemTexture, itemLevel, quantity, quality, isUsable, itemID, isArtifact, artifactPower, isStackable, stackAmount = WorldQuestTracker.GetQuestReward_Item (questID)
+	end
 	
 	if (WorldQuestTracker.CanCacheQuestData and canCache) then
 		WorldQuestTracker.CachedQuestData [questID] = {title, factionID, tagID, tagName, worldQuestType, rarity, isElite, tradeskillLineIndex, tagID, tagName, worldQuestType, rarity, isElite, tradeskillLineIndex, allowDisplayPastCritical, gold, goldFormated, rewardName, rewardTexture, numRewardItems, itemName, itemTexture, itemLevel, quantity, quality, isUsable, itemID, isArtifact, artifactPower, isStackable, stackAmount}
@@ -635,7 +638,7 @@ end
 		_G ["WQTItemTooltipScanTooltipTextLeft4"],
 	}
 	ItemTooltipScan.patern = ITEM_LEVEL:gsub ("%%d", "(%%d+)") --from LibItemUpgradeInfo-1.0
-
+	
 	--pega o premio item da quest
 	function WorldQuestTracker.GetQuestReward_Item (questID)
 		if (not HaveQuestData (questID)) then
@@ -647,14 +650,21 @@ end
 		if (numQuestCurrencies == 1) then
 			--is artifact power?
 			local name, texture, numItems = GetQuestLogRewardCurrencyInfo (1, questID)
-			
 			if (texture == 1830317 or texture == 2065624) then
+				--the taxi map tooltip is adding the reward to the world map quest tooltip
 				GameTooltip_AddQuestRewardsToTooltip (WorldMapTooltip, questID)
 				
 				local amount
 				local t2 = WorldMapTooltipTooltipTextLeft2 and WorldMapTooltipTooltipTextLeft2:GetText()
 				if (t2) then
 					amount = tonumber (t2:match (" %d+ "))
+				end
+				
+				if (WorldMapTooltip:IsShown()) then
+					local owner = WorldMapTooltip:GetOwner()
+					if (owner and owner.UpdateTooltip) then
+						owner:UpdateTooltip()
+					end
 				end
 				
 				return name, texture, 0, 1, 1, false, 0, true, amount or 0, false, 1

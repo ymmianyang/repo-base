@@ -4,6 +4,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale("ChocolateBar")
 local _G, pairs, ipairs, table, string, tostring = _G, pairs, ipairs, table, string, tostring
 local select, strjoin, CreateFrame = select, strjoin, CreateFrame
 
+ChocolateBar.Jostle = {}
 ChocolateBar.Bar = {}
 ChocolateBar.ChocolatePiece = {}
 ChocolateBar.Drag = {}
@@ -274,6 +275,7 @@ end
 --------
 function ChocolateBar:LibDataBroker_DataObjectCreated(event, name, obj, noupdate)
 	local t = obj.type
+
 	if t == "data source" or t == "launcher" then
 		if db.objSettings[name].enabled then
 			self:EnableDataObject(name, obj, noupdate)
@@ -289,6 +291,7 @@ function ChocolateBar:EnableDataObject(name, obj, noupdate)
 		Debug("Unknown type", t, name)
 		return 0
 	end
+	
 	local settings = db.objSettings[name]
 	settings.enabled = true
 
@@ -335,6 +338,8 @@ function ChocolateBar:EnableDataObject(name, obj, noupdate)
     --    choco:Update(choco, 'resizeFrame')
     --end
 	broker.RegisterCallback(self, "LibDataBroker_AttributeChanged_"..name, "AttributeChanged")
+	
+	ChocolateBar:AddObjectOptions(name, obj)
 end
 
 function ChocolateBar:DisableDataObject(name)

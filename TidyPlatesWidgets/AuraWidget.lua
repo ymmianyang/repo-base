@@ -181,6 +181,7 @@ local function UpdateIconGrid(frame, unitid)
 		local unitReaction
 		if UnitIsFriend("player", unitid) then unitReaction = AURA_TARGET_FRIENDLY
 		else unitReaction = AURA_TARGET_HOSTILE end
+		local unitIsNPC = not UnitPlayerControlled(unitid)
 
 		local AuraIconFrames = frame.AuraIconFrames
 		local storedAuras = {}
@@ -203,7 +204,7 @@ local function UpdateIconGrid(frame, unitid)
 			local aura = {}
 
 			do
-				local name, icon, stacks, auraType, duration, expiration, caster, _, _, spellid = UnitAura(unitid, auraIndex, auraFilter)		-- UnitaAura
+				local name, icon, stacks, auraType, duration, expiration, caster, isStealable, _, spellid = UnitAura(unitid, auraIndex, auraFilter)		-- UnitaAura
 
 				aura.name = name
 				aura.texture = icon
@@ -212,6 +213,8 @@ local function UpdateIconGrid(frame, unitid)
 				aura.effect = auraFilter
 				aura.duration = duration
 				aura.reaction = unitReaction
+                aura.isNPC = unitIsNPC
+                aura.isStealable = isStealable
 				aura.expiration = expiration
 				aura.caster = caster
 				aura.spellid = spellid

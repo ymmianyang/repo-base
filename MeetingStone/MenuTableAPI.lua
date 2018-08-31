@@ -89,8 +89,11 @@ local function MakeGroupMenuTable(categoryId, groupId, baseFilter, menuType)
     data.categoryId = categoryId
     data.groupId = groupId
     data.baseFilter = baseFilter
-    data.notClickable = categoryId == 1 or not isClickable(menuType)
+    -- data.notClickable = categoryId == 1 or not isClickable(menuType)
+    data.notClickable = true
     data.value = not data.notClickable and GetActivityCode(nil, nil, categoryId, groupId)
+    data.tooltipTitle = L['请选择具体副本难度']
+    data.tooltipOnButton = true
 
     if data.value then
         currentCodeCache[data.value] = data
@@ -168,7 +171,7 @@ local function MakeCategoryMenuTable(categoryId, baseFilter, menuType)
 
     if categoryId == 2 or categoryId == 3 then
         -- for i = #MAX_PLAYER_LEVEL_TABLE, 0, -1 do
-        for i = 6, 0, -1 do
+        for i = 7, 0, -1 do
             local versionMenu = MakeVersionMenuTable(categoryId, i, baseFilter, menuType)
             if versionMenu then
                 tinsert(menuTable, versionMenu)

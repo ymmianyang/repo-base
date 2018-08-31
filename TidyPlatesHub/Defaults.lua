@@ -82,9 +82,9 @@ TidyPlatesHubDefaults = {
 	UnitSpotlightScaleEnable = true,
 	UnitSpotlightBarEnable = true,
 	UnitSpotlightGlowEnable = false,
-	UnitSpotlightList = "邪能炸药\nTest地下城训练假人",
+	UnitSpotlightList = "爆炸物\n邪能炸药\nTest地下城训练假人",
 	UnitSpotlightLookup = {},
-    UnitSpotlightVersion = "20170610",
+    UnitSpotlightVersion = "20180804",
 
 	-- Filter
 	---------------------------------------
@@ -135,7 +135,7 @@ TidyPlatesHubDefaults = {
 	-- Threat
 	---------------------------------------
 	ThreatMode = 1,
-	ThreatGlowEnable = true,
+	ThreatGlowEnable2 = false,
 	ColorThreatWarning = {r = .8, g = 0, b = 0,},		-- Orange
 	ColorThreatTransition = {r = 255/255, g = 160/255, b = 0},	-- Yellow
 	ColorThreatSafe = {r = 15/255, g = 150/255, b = 230/255},	-- Bright Blue
@@ -211,7 +211,9 @@ TidyPlatesHubDefaults = {
 	--WidgetsAuraMode = 1,
 	WidgetsMyDebuff = true,
 	WidgetsMyBuff = false,
-	WidgetsDebuffTrackList = "My Rake\nMy Rip\nMy Moonfire\nAll 339\nMy Regrowth\nMy Rejuvenation\nNot Facepalm Bolt",
+    WidgetsHostileBuff = true,
+    WidgetsHostileBuffStealableOnly2 = true,
+	WidgetsDebuffTrackList = "", --"My Rake\nMy Rip\nMy Moonfire\nAll 339\nMy Regrowth\nMy Rejuvenation\nNot Facepalm Bolt",
 	WidgetsDebuffLookup = {},
 	WidgetsDebuffPriority = {},
 	WidgetAuraTrackDispelFriendly = false,

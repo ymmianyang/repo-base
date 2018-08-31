@@ -4,7 +4,7 @@ local frame = CreateFrame("Frame")
 local optionPanel = nil
 
 local defaultDB = {
-    version = "20160803",
+    version = "20180816",
     AchievementFrame = {save = true},
     CalendarFrame = {save = true},
     AuctionFrame = {save = true},
@@ -29,7 +29,10 @@ local defaultDB = {
     CollectionsJournal = {save = true, },
     GuildFrame = {save = true, },
     FriendsFrame = {save = true, },
-    ObjectiveTrackerFrame = { save = true, }
+    ObjectiveTrackerFrame = { save = true, },
+    WorldMapFrame = {save = true, },
+    ScrappingMachineFrame = { save = true, },
+    AzeriteEmpoweredItemUI = { save = true, },
 }
 
 local userPlaced = {
@@ -369,6 +372,7 @@ local function OnEvent(self, event, arg1, arg2)
         --SetCVar("lockedWorldMap", "0") --WorldMap
         WW(WorldMapFrame):Button("WMAPMover"):Size(150,22):TOP(WorldMapFrame, 0,0):up():un()
         BM_SetMoveHandler(WorldMapFrame, WMAPMover) --enable scale --abandoned because quest poi --TODO aby8
+        WorldMapFrame:SetClampedToScreen(true)
 
         BM_SetMoveHandler(TradeFrame)
 
@@ -408,6 +412,8 @@ local function OnEvent(self, event, arg1, arg2)
         BM_SetMoveHandlerWith("LookingForGuildFrame", "Blizzard_LookingForGuildUI");
         BM_SetMoveHandlerWith("ArchaeologyFrame", "Blizzard_ArchaeologyUI");
         BM_SetMoveHandlerWith("ArtifactRelicForgeFrame", "Blizzard_ArtifactUI");
+        BM_SetMoveHandlerWith("ScrappingMachineFrame", "Blizzard_ScrappingMachineUI");
+        BM_SetMoveHandlerWith("AzeriteEmpoweredItemUI", "Blizzard_AzeriteUI");
 
         if not hasConflict then 
             BM_SetMoveHandler(PlayerPowerBarAlt) 

@@ -127,13 +127,19 @@ local function SmartFilterMode(aura)
 
 	-- My own Buffs and Debuffs
 	if (aura.caster == "player" or aura.caster == "pet") and aura.duration and aura.duration < 150 then
-		if LocalVars.WidgetsMyBuff and aura.effect == "HELPFUL" then
+		if false and LocalVars.WidgetsMyBuff and aura.effect == "HELPFUL" then
 			ShowThisAura = true
 		elseif LocalVars.WidgetsMyDebuff and aura.effect == "HARMFUL" then
 			ShowThisAura = true
 		end
-	end
-
+    elseif LocalVars.WidgetsHostileBuff and aura.isNPC and aura.reaction == AURA_TARGET_HOSTILE and aura.effect == "HELPFUL" and (not LocalVars.WidgetsHostileBuffStealableOnly2 or aura.isStealable) then
+        --abyui hostile npc buff
+        if aura.isStealable then
+            return true, -10, 0, 1, 0
+        else
+            return true, -5, 1, 0, 0
+        end
+    end
 
 	-- Evaluate for further filtering
 	local prefix, priority = GetPrefixPriority(aura)

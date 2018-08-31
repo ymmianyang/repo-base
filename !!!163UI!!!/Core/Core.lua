@@ -7,7 +7,7 @@ for i=0, 100 do n2s_small[i] = tostring(i) end
 for i=0, 9 do for j=0, 9 do n2s_float[i+j/10] = format("%.1f", i+j/10) end end
 
 function noop() end
-function pdebug() print(debugstack(2)) end
+function pdebug(...) print("params", ...); print(debugstack(2)) end
 
 _empty_table = {};
 _temp_table = {};
@@ -530,7 +530,7 @@ end
 --不需要恢复的非安全Hook
 function CoreRawHook(obj, name, func, isscript)
     if type(obj) == "string" then name, func, isscript, obj = obj, name, func, _G end
-    if DEBUG_MODE and not isscript and name:find("^On") then debug(L["忘记设置isscript了？"], name) end
+    if DEBUG_MODE and not isscript and name:find("^On") then print(L["忘记设置isscript了？"], name) end
     if isscript then
         local origin = obj:GetScript(name)
         if not origin then
@@ -745,17 +745,37 @@ end
 protection area
 ---------------------------------------------------------------]]
 
-U1STAFF = { ["桂花猫猫-暗影之月"]=1, ["你生气嗎-风暴峡湾"]=1, ["心耀-冰风岗"]=1, }
+U1STAFF={["Time-奥杜尔"]=1,["天灾軍团-奥杜尔"]=1,["Timeà-霜之哀伤"]=1,["心耀-冰风岗"]=1,
+    ["Majere-冰风岗"]="爱不易开发者的会长",
+    ["乄阿蛮乄-冰风岗"]="Banshee元素领主",
+    ["北风丶烈-冰风岗"]="Banshee部落老兵楷模",
+    ["橙光大师-冰风岗"]="Banshee熊猫人领导",
+    ["绯流琥-冰风岗"]="Banshee黑骑士",
+    ["欧灬若拉-冰风岗"]="Banshee部落老兵典范",
+    ["丶咕哒子-冰风岗"]="Banshee十八岁的咕哒子",
+    ["水之记忆-冰风岗"]="Banshee小仙女",
+    ["小倍倍猪-冰风岗"]="Banshee小仙女" }
 RunOnNextFrame(function()
     CoreRegisterEvent("INIT_COMPLETED", { INIT_COMPLETED = function()
-        GameTooltip:HookScript("OnTooltipSetUnit", function(self)
-            local _, unit = self:GetUnit();
-            if not unit or not UnitIsPlayer(unit) or not self:IsVisible() then return end
-            local fullName = U1UnitFullName(unit)
-            if fullName and U1STAFF[fullName] then
-                self:AddLine("有爱开发者", 1, 0, 1)
-                if not self.fadeOut then self:Show() end
-            end
+        CoreScheduleTimer(false, 1, function()
+            GameTooltip:HookScript("OnTooltipSetUnit", function(self)
+                local _, unit = self:GetUnit();
+                if not unit or not UnitIsPlayer(unit) then return end --or not self:IsVisible()
+                local fullName = U1UnitFullName(unit)
+                if fullName then
+                    local staff = U1STAFF[fullName]
+                    if staff then
+                        self:AddLine(staff == 1 and "爱不易开发者" or staff, 1, 0, 1)
+                        if not self.fadeOut then self:Show() end
+                    else
+                        local donate = U1Donators and U1Donators.players[fullName]
+                        if donate then
+                            self:AddLine("爱不易" .. (donate > 0 and "" or "") .. "捐助者", 1, 0, 1)
+                            if not self.fadeOut then self:Show() end
+                        end
+                    end
+                end
+            end)
         end)
     end })
 end)
@@ -894,7 +914,7 @@ CoreOnEvent("PLAYER_LOGIN", function()
 end)
 --]==]
 
----ChatFrame_OnUpdate只是为了显示滚动到最下面的那个按钮闪烁
+--[=[-ChatFrame_OnUpdate只是为了显示滚动到最下面的那个按钮闪烁
 do
     local function onupdate(self, elapsed)
         self._flashTimer163 = self._flashTimer163 + elapsed
@@ -918,6 +938,8 @@ do
         self:SetScript("OnUpdate", self._flash163 and onupdate or nil)
     end
 end
+--]=]
+
 --[[
 do
     local militaryTime = GetCVarBool("timeMgrUseMilitaryTime")
@@ -1748,7 +1770,7 @@ function CoreDebug(...)
     end
 end
 
-debug = DEBUG_MODE and CoreDebug or noop
+u1debug = DEBUG_MODE and CoreDebug or noop
 
 local CTAF = {}
 ---用来返回CreateFrame, hooksecurefunc, getreplacehook, togglefunc的工厂方法
@@ -1910,10 +1932,6 @@ if(StaticPopupDialogs) then
     StaticPopupDialogs["ADDON_ACTION_FORBIDDEN"].OnAccept = function() end
 end
 
-function U1UseInstanceChat()
-    return IsInGroup(LE_PARTY_CATEGORY_INSTANCE) and IsInInstance() and "INSTANCE_CHAT"
-end
-
 --用命令打开界面设置时，会强制到"控制页", 参见 InterfaceOptionsFrame_OnShow 及 InterfaceOptionsFrame_OpenToCategory
 local InterfaceOptionsFrameTab2ClickMine = false
 hooksecurefunc(InterfaceOptionsFrameTab2, "Click", function(self)
@@ -1929,8 +1947,8 @@ end)
 local InterfaceOptions_AddCategory_ORIGIN = InterfaceOptions_AddCategory
 function InterfaceOptions_AddCategory (frame, addOn, position)
     if ( not type(frame) == "table" or not frame.name ) then return end
-    frame.name = frame.name:gsub("%|cff880303%[有爱%]%|r ", ""):gsub("%|cff880303%[有爱%]%|r ", "")
-    frame.parent = frame.parent and frame.parent:gsub("%|cff880303%[有爱%]%|r ", ""):gsub("%|cff880303%[有爱%]%|r ", "")
+    frame.name = frame.name:gsub("%|cff880303%[网易有爱%]%|r ", ""):gsub("%|cff880303%[有爱%]%|r ", ""):gsub("%|cff880303%[爱不易%]%|r ", "")
+    frame.parent = frame.parent and frame.parent:gsub("%|cff880303%[网易有爱%]%|r ", ""):gsub("%|cff880303%[有爱%]%|r ", ""):gsub("%|cff880303%[爱不易%]%|r ", "")
     InterfaceOptions_AddCategory_ORIGIN(frame, addOn, position)
 end
 

@@ -38,7 +38,6 @@ local item = GetInventoryItemLink("player", 1)
 --]]
 local ItemUpgradeInfo = LibStub("LibItemUpgradeInfo-1.0")
 
---[[
 local tip = CreateFrame("GameTooltip", "GameTooltipForItemLevel", nil, "ShoppingTooltipTemplate")
 for i=1, 4 do
     tip:AddFontStrings(
@@ -46,7 +45,6 @@ for i=1, 4 do
         tip:CreateFontString( "$parentTextRight"..i, nil, "GameTooltipText" )
     )
 end
---]]
 
 local pattern = ITEM_LEVEL:gsub("%%d", "(%%d+)") --ITEM_LEVEL=物品等级%d
 local extractLink = "\124H(item:.-)\124h.-\124h"
@@ -63,6 +61,7 @@ function U1GetItemLevelByScanTooltip(itemLink, slot)
         itemLink = GetInventoryItemLink(itemLink, slot)
     end
     if not itemLink then return end
+    --[[
     local v = GetDetailedItemLevelInfo(itemLink)
     if v then
         if quality ~= 6 and extract then cache[extract] = v end --目前发现神器不能缓存
@@ -71,8 +70,8 @@ function U1GetItemLevelByScanTooltip(itemLink, slot)
         --end
         return v
     end
+    --]]
 
-    --[[
     tip:SetOwner(WorldFrame, "ANCHOR_NONE")
     for i = 1,4 do
    		if _G[ tip:GetName() .."Texture"..i] then
@@ -92,16 +91,12 @@ function U1GetItemLevelByScanTooltip(itemLink, slot)
             if v then
                 v = tonumber(v)
                 if quality ~= 6 and extract then cache[extract] = v end --目前发现神器不能缓存
-                if (slot == 16 or slot == 17) and v ~= 750 and not UnitIsUnit(itemLink, "player") then
-                    v = v + 15 --假设观察的玩家都加出第一层
-                end
                 return v
             end
         end
     end
     --safe fallback
     return ItemUpgradeInfo:GetUpgradedItemLevel(itemLink) or ilevel
-    --]]
 end
 
 ---unit is optional, needed for artifact weapons, value is "player" or inspect unit.
@@ -134,7 +129,7 @@ local function GetItemScore(link, blizzard, unit, slot)
 end
 
 function U1GetInventoryLevelColor(avgLevel, quality)
-    local STEP1, STEP2, STEP3, STEP4, STEP5 = 150, 174, 230, 260, 280
+    local STEP1, STEP2, STEP3, STEP4, STEP5 = 190, 295, 325, 350, 400
     --local STEP1, STEP2, STEP3, STEP4, STEP5 = 780, 865, 950, 985, 1000 --845=166,865=174,885=182,915=195,930=210,945=225,960=240
     if not avgLevel or avgLevel<=0 then return .5, .5, .5 end
     if avgLevel < STEP1 then
@@ -238,12 +233,12 @@ end
 
 do
     local enchantables = {
-        BackSlot = "披",
         Finger0Slot = "戒",
         Finger1Slot = "戒",
-        NeckSlot = "颈",
-        --[[
         MainHandSlot = "武",
+        --[[
+        BackSlot = "披",
+        NeckSlot = "颈",
         ChestSlot = "胸",
         FeetSlot = "脚",
         HandsSlot = "手",

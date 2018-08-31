@@ -1,6 +1,7 @@
 local _, U1 = ...;
 U1.ABBR={
     ["tellmewhen"] = "tmw",
+    ["weakauras2"] = "wa",
     ["eventalertmod"] = "eam",
     ["worldquestslist"] = "wql",
     ["worldquesttracker"] = "wqt",
@@ -246,6 +247,9 @@ U1.PINYIN={
     ['神器能量助手']={'shenqinengliangzhushou','sqnlzs'},
     ['橙装闪换']={'chengzhuangshanhuan','czsh'},
     ['战斗计时']={'zhandoujishi','zdjs'},
-    ['有爱装备搜索']={'youaizhuangbeisousuo','yazbss'},
+    ['爱不易装备搜索']={'aibuyizhuangbeisousuo','abyzbss'},
     ['装等显示']={'zhuangdengxianshi','zdxs'},
+    ['装备特质显示']={'zhuangbeitezhixianshi','zbtzxs'},
+    ['帕库图腾标记']={'pakututengbiaoji','pkttbj'},
+    ['SUF头像增强']={'suftouxiangzengqiang','suftxzq'},
 }

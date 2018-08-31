@@ -1,5 +1,8 @@
 EnableAddOn("!!!Libs") LoadAddOn("!!!Libs") --不能在CoreLibs之前，不能在163UIUI之后。之后根据有没有软件用库来决定是否加载
 
+--TODO aby8
+GuildControlUIRankSettingsFrameRosterLabel = GuildControlUIRankSettingsFrameRosterLabel or CreateFrame("Frame")
+
 function U1RemovedAddOn(...)
     local removed = {}
     for i=1, select('#', ...) do
@@ -53,7 +56,7 @@ if QueueStatusMinimapButton then
     QueueStatusMinimapButton:SetFrameStrata("HIGH")
 end
 
---按ESC时, AceConfigDialog先关闭, 并阻止界面窗口和有爱关闭
+--按ESC时, AceConfigDialog先关闭, 并阻止界面窗口和爱不易关闭
 hooksecurefunc("StaticPopup_EscapePressed", function()
     if LibStub("AceConfigDialog-3.0"):CloseAll() then
         GameMenuFrame:Show()

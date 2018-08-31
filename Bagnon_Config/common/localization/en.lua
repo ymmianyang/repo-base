@@ -7,6 +7,9 @@
 local CONFIG, Config = ...
 local L = LibStub('AceLocale-3.0'):NewLocale(CONFIG, 'enUS', true, 'raw')
 
+-- global
+L.ConfirmGlobals = 'Are you sure you want to disable specific settings for this character? All specific settings will be lost.'
+
 -- general
 L.GeneralDesc = 'These are general features that can be toggled depending on your preferences.'
 L.Locked = 'Lock Frames'
@@ -76,6 +79,7 @@ L.CloseCombat = 'Entering Combat'
 L.CloseVehicle = 'Entering a Vehicle'
 L.CloseBank = 'Leaving the Bank'
 L.CloseVendor = 'Leaving a Vendor'
+L.CloseMap = 'Opening the World Map'
 
 -- colors
 L.ColorSettings = 'Color Settings'

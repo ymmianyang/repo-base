@@ -2,6 +2,7 @@ local L = select(2, ...).L
 local GridFrame = Grid:GetModule("GridFrame")
 local GridLayout = Grid:GetModule("GridLayout")
 local GridStatus = Grid:GetModule("GridStatus")
+local GridRoster = Grid:GetModule("GridRoster")
 local ACD3 = LibStub("AceConfigDialog-3.0")
 local ACR3 = LibStub("AceConfigRegistry-3.0")
 
@@ -17,7 +18,7 @@ Grid.options.args.Extra163 = {
         header = {
             order = 0,
             type = "description",
-            name = "您正在使用的是有爱发布的 Warbaby's Grid整合包，虽然并非核心框架的作者，但原创、修改、优化的内容仍耗费了上百小时，转发分享时请保留此信息，万谢!\n如有问题或建议欢迎到有爱官网 [ http://w.163.com/163ui ] 反馈"
+            name = "您正在使用的是爱不易发布的Warbaby's Grid整合包，虽然并非核心框架的作者，但原创、修改、优化的内容仍耗费了上百小时，转发分享时请保留此信息，万谢!"
         }
     }
 }
@@ -293,6 +294,7 @@ Mixin(GridFrame.defaultDB, {
         iconright = {
             alert_tankcd = true,
             alert_vehicleui = true,
+            alert_phase = true,
         },
         icontop = {
             raid_icon = true,
@@ -629,6 +631,8 @@ DependCall("GridStatusTankCooldown", function()
     local options = Grid.options.args.GridStatus.args.alert_tankcd
     options.order = 80
     extra163.alert_tankcd = options
+    local options = Grid.options.args.GridStatus.args.alert_tankcd_secondary
+    options.order = 81
 end)
 
 DependCall("BigDebuffs", function()
@@ -678,12 +682,12 @@ do
                         end
                     end
                     if not self.advised then
-                        DEFAULT_CHAT_FRAME:AddMessage("有爱 - 已暂时屏蔽载具单位切换")
+                        DEFAULT_CHAT_FRAME:AddMessage("爱不易 - 已暂时屏蔽载具单位切换")
                         self.advised = 1
                     end
                 else
                     if not self.advised then
-                        DEFAULT_CHAT_FRAME:AddMessage("有爱 - 下一把会屏蔽载具单位切换")
+                        DEFAULT_CHAT_FRAME:AddMessage("爱不易 - 下一把会屏蔽载具单位切换")
                         self.advised = 1
                     end
                     self.needToggle = 1
@@ -726,4 +730,76 @@ do
     ef:RegisterEvent("ENCOUNTER_START")
     --ef:RegisterEvent("ENCOUNTER_END")
     ef:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
+--[[------------------------------------------------------------
+相位图标
+---------------------------------------------------------------]]
+do
+    local GridStatusPhase = Grid:NewStatusModule("GridStatusPhase")
+    -- GridStatusPhase.menuName = "位面与战争模式"
+
+    GridStatusPhase.defaultDB = {
+        alert_phase = {
+            enable = true,
+            priority = 40,
+            color = { r = 1, g = 1, b = 0, a = 1 },
+        },
+    }
+
+    function GridStatusPhase:PostInitialize()
+    	self:RegisterStatus("alert_phase", "位面与战争模式", nil, true)
+    end
+
+    function GridStatusPhase:OnStatusEnable(status)
+        if status == "alert_phase" then
+            self:RegisterEvent("UNIT_PHASE", "UpdateUnit")
+            self:RegisterEvent("UNIT_FLAGS", "UpdateUnit")
+            self:RegisterEvent("UNIT_CONNECTION", "UpdateUnit")
+            self:RegisterEvent("GROUP_ROSTER_UPDATE", "UpdateAllUnits")
+            self:UpdateAllUnits()
+        end
+    end
+
+    function GridStatusPhase:OnStatusDisable(status)
+        if status == "alert_phase" then
+            self:UnregisterEvent("UNIT_PHASE")
+            self:UnregisterEvent("GROUP_ROSTER_UPDATE")
+            self.core:SendStatusLostAllUnits("alert_phase")
+        end
+    end
+
+    function GridStatusPhase:UpdateAllUnits()
+        for guid, unit in GridRoster:IterateRoster() do
+            self:UpdateUnit("UpdateAllUnits", unit)
+        end
+    end
+
+    local UnitGUID, UnitInPhase, UnitIsWarModePhased, UnitIsConnected
+        = UnitGUID, UnitInPhase, UnitIsWarModePhased, UnitIsConnected
+
+    local TEX_COORD = { left = 0.15625, right = 0.84375, top = 0.15625, bottom = 0.84375 }
+    function GridStatusPhase:UpdateUnit(event, unit)
+        if not unit then return end
+        local guid = UnitGUID(unit)
+        if not GridRoster:IsGUIDInGroup(guid) then return end
+        if (UnitIsWarModePhased(unit) or not UnitInPhase(unit)) and UnitIsConnected(unit) then
+            local settings = self.db.profile.alert_phase
+            self.core:SendStatusGained(guid, "alert_phase",
+                settings.priority,
+                nil, -- range
+                settings.color,
+                "异相", -- text
+                nil, -- value
+                nil, -- maxValue
+                "Interface\\TargetingFrame\\UI-PhasingIcon", -- texture
+                nil, -- start
+                nil, -- duration
+                nil, -- count
+                TEX_COORD
+            )
+        else
+            self.core:SendStatusLost(guid, "alert_phase")
+        end
+    end
 end

@@ -1,4 +1,4 @@
-local internalVersion = 5;
+local internalVersion = 6;
 
 -- Lua APIs
 local tinsert, tconcat, tremove, tContains, wipe = table.insert, table.concat, table.remove, tContains, wipe
@@ -38,7 +38,6 @@ function WeakAurasTimers:ScheduleTimerFixed(func, delay, ...)
 end
 
 local LDB = LibStub:GetLibrary("LibDataBroker-1.1")
--- TODO 8.0 - Use for user data upgrades? local HBD = LibStub("HereBeDragons-2.0")
 
 local timer = WeakAurasTimers
 WeakAuras.timer = timer
@@ -138,6 +137,12 @@ local loadFuncsForOptions = {};
 
 -- Check Conditions Functions, keyed on id
 local checkConditions = {};
+
+-- Dynamic Condition functions to run. keyed on event and id
+local dynamicConditions = {};
+
+-- Global Dynamic Condition Funcs, keyed on the event
+local globalDynamicConditionFuncs = {};
 
 -- All regions keyed on id, has properties: region, regionType, also see clones
 WeakAuras.regions = {};
@@ -376,6 +381,7 @@ local blockedFunctions = {
   setfenv = true,
   loadstring = true,
   pcall = true,
+  xpcall = true,
   -- blocked WoW API
   SendMail = true,
   SetTradeMoney = true,
@@ -396,7 +402,7 @@ local blockedFunctions = {
   SetBindingMacro = true,
   GuildDisband = true,
   GuildUninvite = true,
-  ForceQuit = true,
+  securecall = true,
 }
 
 local overrideFunctions = {
@@ -565,7 +571,7 @@ function WeakAuras.ConstructFunction(prototype, trigger, skipOptional)
           if(arg.init and arg.init ~= "arg") then
             init = init.."local "..name.." = "..arg.init.."\n";
           end
-          local number = tonumber(trigger[name]);
+          local number = trigger[name] and tonumber(trigger[name]);
           local test;
           if(arg.type == "tristate") then
             if(trigger["use_"..name] == false) then
@@ -579,9 +585,9 @@ function WeakAuras.ConstructFunction(prototype, trigger, skipOptional)
             end
           elseif(arg.type == "multiselect") then
             if(trigger["use_"..name] == false) then -- multi selection
-              test = "(";
               local any = false;
-              if (trigger[name].multi) then
+              if (trigger[name] and trigger[name].multi) then
+                test = "(";
                 for value, _ in pairs(trigger[name].multi) do
                   if not arg.test then
                     test = test..name.."=="..(tonumber(value) or "[["..value.."]]").." or ";
@@ -664,8 +670,10 @@ local function formatValueForAssignment(vtype, value, pathToCustomFunction)
   if (value == nil) then
     value = false;
   end
-  if (vtype == "bool" or vtype == "number") then
-    return tostring(value);
+  if (vtype == "bool") then
+    return value and tostring(value) or "false";
+  elseif(vtype == "number") then
+    return value and tostring(value) or "0";
   elseif (vtype == "list") then
     return type(value) == "string" and string.format("%q", value) or "nil";
   elseif(vtype == "color") then
@@ -712,12 +720,13 @@ function WeakAuras.scheduleConditionCheck(time, id, cloneId)
   conditionChecksTimers.recheckHandle[id] = conditionChecksTimers.recheckHandle[id] or {};
 
   if (conditionChecksTimers.recheckTime[id][cloneId] and conditionChecksTimers.recheckTime[id][cloneId] > time) then
-    timer:CancelTimer(conditionChecksTimers.recheckHandle);
-    conditionChecksTimers.recheckHandle = nil;
+    timer:CancelTimer(conditionChecksTimers.recheckHandle[id][cloneId]);
+    conditionChecksTimers.recheckHandle[id][cloneId] = nil;
   end
 
-  if (conditionChecksTimers.recheckTime[id][cloneId] == nil) then
+  if (conditionChecksTimers.recheckHandle[id][cloneId] == nil) then
     conditionChecksTimers.recheckHandle[id][cloneId] = timer:ScheduleTimerFixed(function()
+      conditionChecksTimers.recheckHandle[id][cloneId] = nil;
       local region;
       if(cloneId and cloneId ~= "") then
         region = clones[id] and clones[id][cloneId];
@@ -728,67 +737,110 @@ function WeakAuras.scheduleConditionCheck(time, id, cloneId)
         checkConditions[id](region);
       end
     end, time - GetTime())
+    conditionChecksTimers.recheckTime[id][cloneId] = time;
   end
 end
 
-local function CreateCheckCondition(ret, condition, conditionNumber, allConditionsTemplate, debug)
-  local trigger = condition.check and condition.check.trigger;
-  local variable = condition.check and condition.check.variable;
-  local op = condition.check and condition.check.op;
-  local value = condition.check and condition.check.value;
+local function CreateTestForCondition(input, allConditionsTemplate, usedStates)
+  local trigger = input and input.trigger;
+  local variable = input and input.variable;
+  local op = input and input.op;
+  local value = input and input.value;
+
+  local check = nil;
+  local recheckCode = nil;
+
+  if (variable == "AND" or variable == "OR") then
+    local test = {};
+    if (input.checks) then
+      for i, subcheck in ipairs(input.checks) do
+        local subtest, subrecheckCode = CreateTestForCondition(subcheck, allConditionsTemplate, usedStates);
+        if (subtest) then
+          tinsert(test, "(" .. subtest .. ")");
+        end
+        if (subrecheckCode) then
+          recheckCode = recheckCode or "";
+          recheckCode = recheckCode .. subrecheckCode;
+        end
+      end
+    end
+    if (next(test)) then
+      if (variable == "AND") then
+        check = tconcat(test, " and ");
+      else
+        check = tconcat(test, " or ");
+      end
+    end
+  end
+
   if (trigger and variable and value) then
+    usedStates[trigger] = true;
+
     local conditionTemplate = allConditionsTemplate[trigger] and allConditionsTemplate[trigger][variable];
     local type = conditionTemplate and conditionTemplate.type;
     local test = conditionTemplate and conditionTemplate.test;
 
-    local check = nil;
-    local stateCheck = "state and state.show and ";
-    local stateVariableCheck = "state." .. variable .. "~= nil and ";
+    local stateCheck = "state[" .. trigger .. "] and state[" .. trigger .. "].show and ";
+    local stateVariableCheck = "state[" .. trigger .. "]." .. variable .. "~= nil and ";
     if (test) then
       if (value) then
+        test = test:gsub("state", "state[" .. trigger .. "]")
         check = string.format(test, value, op or "");
+        check = "state and (" .. check .. ")";
       end
     elseif (type == "number" and op) then
-      check = stateCheck .. stateVariableCheck .. "state." .. variable .. op .. value;
+      check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." .. variable .. op .. value;
     elseif (type == "timer" and op) then
       if (op == "==") then
-        check = stateCheck .. stateVariableCheck .. "abs(state." ..variable .. "- now -" .. value .. ") < 0.05";
+        check = stateCheck .. stateVariableCheck .. "abs(state[" .. trigger .. "]." ..variable .. "- now -" .. value .. ") < 0.05";
       else
-        check = stateCheck .. stateVariableCheck .. "state." .. variable .. "- now" .. op .. value;
+        check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." .. variable .. "- now" .. op .. value;
       end
     elseif (type == "select" and op) then
       if (tonumber(value)) then
-        check = stateCheck .. stateVariableCheck .. "state." .. variable .. op .. tonumber(value);
+        check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." .. variable .. op .. tonumber(value);
       else
-        check = stateCheck .. stateVariableCheck .. "state." .. variable .. op .. "'" .. value .. "'";
+        check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." .. variable .. op .. "'" .. value .. "'";
       end
     elseif (type == "bool") then
       local rightSide = value == 0 and "false" or "true";
-      check = stateCheck .. stateVariableCheck .. "state." .. variable .. "==" .. rightSide
+      check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." .. variable .. "==" .. rightSide
     elseif (type == "string") then
       if(op == "==") then
-        check = stateCheck .. stateVariableCheck .. "state." .. variable .. " == [[" .. value .. "]]";
+        check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." .. variable .. " == [[" .. value .. "]]";
       elseif (op  == "find('%s')") then
-        check = stateCheck .. stateVariableCheck .. "state." .. variable .. ":find([[" .. value .. "]], 1, true)";
+        check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." .. variable .. ":find([[" .. value .. "]], 1, true)";
       elseif (op == "match('%s')") then
-        check = stateCheck .. stateVariableCheck .. "state." ..  variable .. ":match([[" .. value .. "]], 1, true)";
+        check = stateCheck .. stateVariableCheck .. "state[" .. trigger .. "]." ..  variable .. ":match([[" .. value .. "]], 1, true)";
       end
     end
 
-    if (check) then
-      ret = ret .. "  allStates = WeakAuras.GetTriggerStateForTrigger(id, " .. trigger .. ")\n";
-      ret = ret .. "  state = allStates[cloneId] or allStates['']\n";
-      ret = ret .. "  if (" .. check .. ") then\n";
-      ret = ret .. "    newActiveConditions[" .. conditionNumber .. "] = true;\n";
-      ret = ret .. "  end\n";
-    end
-
     if (type == "timer" and value) then
-      ret = ret .. "  local nextTime = state and state." .. variable .. " and (state." .. variable .. " -" .. value .. ")\n";
-      ret = ret .. "  if (nextTime and (not recheckTime or nextTime < recheckTime) and nextTime >= now) then\n"
-      ret = ret .. "    recheckTime = nextTime\n";
-      ret = ret .. "  end\n"
+      recheckCode = "  nextTime = state[" .. trigger .. "] and state[" .. trigger .. "]." .. variable .. " and (state[" .. trigger .. "]." .. variable .. " -" .. value .. ")\n";
+      recheckCode = recheckCode .. "  if (nextTime and (not recheckTime or nextTime < recheckTime) and nextTime >= now) then\n"
+      recheckCode = recheckCode .. "    recheckTime = nextTime\n";
+      recheckCode = recheckCode .. "  end\n"
     end
+  end
+  return check, recheckCode;
+end
+
+local function CreateCheckCondition(ret, condition, conditionNumber, allConditionsTemplate, debug)
+  local usedStates = {};
+  local check, recheckCode = CreateTestForCondition(condition.check, allConditionsTemplate, usedStates);
+  if (check) then
+    for triggernum in pairs(usedStates) do
+      ret = ret .. "  allStates = WeakAuras.GetTriggerStateForTrigger(id, " .. triggernum .. ")\n";
+      ret = ret .. "  state[" .. triggernum  .. "] = allStates[cloneId] or allStates['']\n";
+    end
+    ret = ret .. "  if (" .. check .. ") then\n";
+    ret = ret .. "    newActiveConditions[" .. conditionNumber .. "] = true;\n";
+    ret = ret .. "  end\n";
+  end
+  if (recheckCode) then
+    ret = ret .. recheckCode;
+  end
+  if (check or recheckCode) then
     ret = ret .. "\n";
   end
   return ret;
@@ -954,6 +1006,30 @@ function WeakAuras.LoadConditionPropertyFunctions(data)
   end
 end
 
+local globalConditions =
+{
+  ["incombat"] = {
+    display = L["In Combat"],
+    type = "bool",
+    events = {"PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED"},
+    globalStateUpdate = function(state)
+      state.incombat = UnitAffectingCombat("player");
+    end
+  },
+  ["hastarget"] = {
+    display = L["Has Target"],
+    type = "bool",
+    events = {"PLAYER_TARGET_CHANGED"},
+    globalStateUpdate = function(state)
+      state.hastarget = UnitExists("target");
+    end
+  },
+}
+
+function WeakAuras.GetGlobalConditions()
+  return globalConditions;
+end
+
 function WeakAuras.ConstructConditionFunction(data)
   local debug = false;
   if (not data.conditions or #data.conditions == 0) then
@@ -963,10 +1039,13 @@ function WeakAuras.ConstructConditionFunction(data)
   local usedProperties = {};
 
   local allConditionsTemplate = WeakAuras.GetTriggerConditions(data);
+  allConditionsTemplate[-1] = WeakAuras.GetGlobalConditions();
 
   local ret = "";
   ret = ret .. "local newActiveConditions = {};\n"
   ret = ret .. "local propertyChanges = {};\n"
+  ret = ret .. "local state = {};\n"
+  ret = ret .. "local nextTime;\n"
   ret = ret .. "return function(region, skipActions)\n";
   if (debug) then ret = ret .. "  print('check conditions for:', region.id, region.cloneId)\n"; end
   ret = ret .. "  local id = region.id\n";
@@ -974,7 +1053,7 @@ function WeakAuras.ConstructConditionFunction(data)
   ret = ret .. "  local activatedConditions = WeakAuras.GetActiveConditions(id, cloneId)\n";
   ret = ret .. "  wipe(newActiveConditions)\n";
   ret = ret .. "  local allStates\n";
-  ret = ret .. "  local state\n";
+  ret = ret .. "  wipe(state)\n";
   ret = ret .. "  local recheckTime;\n"
   ret = ret .. "  local now = GetTime();\n"
 
@@ -1030,6 +1109,128 @@ function WeakAuras.ConstructConditionFunction(data)
   return ret;
 end
 
+
+local dynamicConditionsFrame = nil;
+
+local globalConditionAllState = {
+  [""] = {
+    show = true;
+  }
+};
+
+local globalConditionState = globalConditionAllState[""];
+
+function WeakAuras.GetGlobalConditionState()
+  return globalConditionAllState;
+end
+
+local function runDynamicConditionFunctions(funcs)
+  for id in pairs(funcs) do
+    if (triggerState[id] and triggerState[id].show and checkConditions[id]) then
+      local activeTriggerState = WeakAuras.GetTriggerStateForTrigger(id, triggerState[id].activeTrigger);
+      for cloneId, state in pairs(activeTriggerState) do
+        local region = WeakAuras.GetRegion(id, cloneId);
+        checkConditions[id](region, false);
+      end
+    end
+  end
+end
+
+local function handleDynamicConditions(self, event)
+  if (globalDynamicConditionFuncs[event]) then
+    for i, func in ipairs(globalDynamicConditionFuncs[event]) do
+      func(globalConditionState);
+    end
+  end
+  if (dynamicConditions[event]) then
+    runDynamicConditionFunctions(dynamicConditions[event]);
+  end
+end
+
+local lastDynamicConditionsUpdateCheck;
+local function handleDynamicConditionsOnUpdate(self)
+  handleDynamicConditions(self, "FRAME_UPDATE");
+  if (not lastDynamicConditionsUpdateCheck or GetTime() - lastDynamicConditionsUpdateCheck > 0.2) then
+    lastDynamicConditionsUpdateCheck = GetTime();
+    handleDynamicConditions(self, "WA_SPELL_RANGECHECK");
+  end
+end
+
+local registeredGlobalFunctions = {};
+
+local function EvaluateCheckForRegisterForGlobalConditions(id, check, allConditionsTemplate, register)
+  local trigger = check and check.trigger;
+  local variable = check and check.variable;
+
+  if (trigger == -2) then
+    if (check.checks) then
+      for _, subcheck in ipairs(check.checks) do
+        EvaluateCheckForRegisterForGlobalConditions(id, subcheck, allConditionsTemplate, register);
+      end
+    end
+  elseif (trigger and variable) then
+    local conditionTemplate = allConditionsTemplate[trigger] and allConditionsTemplate[trigger][variable];
+    if (conditionTemplate and conditionTemplate.events) then
+      for _, event in ipairs(conditionTemplate.events) do
+        if (not dynamicConditions[event]) then
+          register[event] = true;
+          dynamicConditions[event] = {};
+        end
+        dynamicConditions[event][id] = true;
+      end
+
+      if (conditionTemplate.globalStateUpdate and not registeredGlobalFunctions[variable]) then
+        registeredGlobalFunctions[variable] = true;
+        for _, event in ipairs(conditionTemplate.events) do
+          globalDynamicConditionFuncs[event] = globalDynamicConditionFuncs[event] or {};
+          tinsert(globalDynamicConditionFuncs[event], conditionTemplate.globalStateUpdate);
+        end
+        conditionTemplate.globalStateUpdate(globalConditionState);
+      end
+    end
+  end
+end
+
+function WeakAuras.RegisterForGlobalConditions(id)
+  local data = WeakAuras.GetData(id);
+  for event, conditonFunctions in pairs(dynamicConditions) do
+    conditonFunctions.id = nil;
+  end
+
+  local register = {};
+  if (data.conditions) then
+    local allConditionsTemplate = WeakAuras.GetTriggerConditions(data);
+    allConditionsTemplate[-1] = WeakAuras.GetGlobalConditions();
+
+    for conditionNumber, condition in ipairs(data.conditions) do
+      EvaluateCheckForRegisterForGlobalConditions(id, condition.check, allConditionsTemplate, register);
+    end
+  end
+
+  if (next(register) and not dynamicConditionsFrame) then
+    dynamicConditionsFrame = CreateFrame("FRAME");
+    dynamicConditionsFrame:SetScript("OnEvent", handleDynamicConditions);
+    WeakAuras.frames["Rerun Conditions Frame"] = dynamicConditionsFrame
+  end
+
+  for event in pairs(register) do
+    if (event == "FRAME_UPDATE" or event == "WA_SPELL_RANGECHECK") then
+      if (not dynamicConditionsFrame.onUpdate) then
+        dynamicConditionsFrame:SetScript("OnUpdate", handleDynamicConditionsOnUpdate);
+        dynamicConditionsFrame.onUpdate = true;
+      end
+    else
+      dynamicConditionsFrame:RegisterEvent(event);
+    end
+  end
+end
+
+function WeakAuras.UnregisterForGlobalConditions(id)
+  for event, condFuncs in pairs(dynamicConditions) do
+    condFuncs[id] = nil;
+  end
+end
+
 WeakAuras.talent_types_specific = {}
 WeakAuras.pvp_talent_types_specific = {}
 function WeakAuras.CreateTalentCache()
@@ -1057,6 +1258,10 @@ function WeakAuras.CreatePvPTalentCache()
   if (pvpTalentsInitialized) then return end;
   local _, player_class = UnitClass("player")
   local spec = GetSpecialization()
+
+  if (not player_class or not spec) then
+    return;
+  end
 
   WeakAuras.pvp_talent_types_specific[player_class] = WeakAuras.pvp_talent_types_specific[player_class] or {};
   WeakAuras.pvp_talent_types_specific[player_class][spec] = WeakAuras.pvp_talent_types_specific[player_class][spec] or {};
@@ -1133,7 +1338,6 @@ loadedFrame:SetScript("OnEvent", function(self, event, addon)
     WeakAuras.RegisterDisplay = WeakAuras.AddFromAddon;
 
     WeakAuras.ResolveCollisions(function() registeredFromAddons = true; end);
-    WeakAuras.FixGroupChildrenOrder();
 
     for _, triggerSystem in pairs(triggerSystems) do
       if (triggerSystem.AllAdded) then
@@ -1171,6 +1375,7 @@ end);
 
 function WeakAuras.SetImporting(b)
   importing = b;
+  WeakAuras.RefreshTooltipButtons()
 end
 
 function WeakAuras.IsImporting()
@@ -1475,6 +1680,7 @@ function WeakAuras.ScanForLoads(self, event, arg1)
   end
 
   local affixes = C_ChallengeMode.IsChallengeModeActive() and select(2, C_ChallengeMode.GetActiveKeystoneInfo())
+  local warmodeActive = C_PvP.IsWarModeDesired();
 
   local changed = 0;
   local shouldBeLoaded, couldBeLoaded;
@@ -1483,8 +1689,8 @@ function WeakAuras.ScanForLoads(self, event, arg1)
     if (data and not data.controlledChildren) then
       local loadFunc = loadFuncs[id];
       local loadOpt = loadFuncsForOptions[id];
-      shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", incombat, inencounter, inpetbattle, vehicle, vehicleUi, group, player, realm, class, spec, race, faction, playerLevel, zone, zoneId, zonegroupId, encounter_id, size, difficulty, role, affixes);
-      couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   incombat, inencounter, inpetbattle, vehicle, vehicleUi, group, player, realm, class, spec, race, faction, playerLevel, zone, zoneId, zonegroupId, encounter_id, size, difficulty, role, affixes);
+      shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", incombat, inencounter, warmodeActive, inpetbattle, vehicle, vehicleUi, group, player, realm, class, spec, race, faction, playerLevel, zone, zoneId, zonegroupId, encounter_id, size, difficulty, role, affixes);
+      couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   incombat, inencounter, warmodeActive, inpetbattle, vehicle, vehicleUi, group, player, realm, class, spec, race, faction, playerLevel, zone, zoneId, zonegroupId, encounter_id, size, difficulty, role, affixes);
 
       if(shouldBeLoaded and not loaded[id]) then
         WeakAuras.LoadDisplay(id);
@@ -1600,7 +1806,7 @@ function WeakAuras.UnloadAll()
   end
   wipe(timers);
 
-  for _, id in pairs(conditionChecksTimers.recheckTime) do
+  for id in pairs(conditionChecksTimers.recheckTime) do
     if (conditionChecksTimers.recheckHandle[id]) then
       for _, v in pairs(conditionChecksTimers.recheckHandle[id]) do
         timer:CancelTimer(v);
@@ -1618,6 +1824,7 @@ end
 
 do
   function WeakAuras.LoadDisplay(id)
+    WeakAuras.RegisterForGlobalConditions(id);
     triggerState[id].triggers = {};
     triggerState[id].triggerCount = 0;
     triggerState[id].show = false;
@@ -1654,6 +1861,7 @@ do
       end
     end
     conditionChecksTimers.recheckHandle[id] = nil;
+    WeakAuras.UnregisterForGlobalConditions(id);
 
     for _, triggerSystem in pairs(triggerSystems) do
       triggerSystem.UnloadDisplay(id);
@@ -1663,7 +1871,6 @@ end
 
 function WeakAuras.Delete(data)
   local id = data.id;
-
   if(data.parent) then
     local parentData = db.displays[data.parent];
     if(parentData and parentData.controlledChildren) then
@@ -1697,7 +1904,6 @@ function WeakAuras.Delete(data)
   regions[id].region:Hide();
 
   WeakAuras.CollapseAllClones(id);
-
   db.registered[id] = nil;
   if(WeakAuras.importDisplayButtons and WeakAuras.importDisplayButtons[id]) then
     local button = WeakAuras.importDisplayButtons[id];
@@ -1719,7 +1925,7 @@ function WeakAuras.Delete(data)
   checkConditions[id] = nil;
   conditionChecksTimers.recheckTime[id] = nil;
   if (conditionChecksTimers.recheckHandle[id]) then
-    for _, v in pairs(conditionChecksTimers.recheckHandle[id]) do
+    for cloneId, v in pairs(conditionChecksTimers.recheckHandle[id]) do
       timer:CancelTimer(v);
     end
   end
@@ -1737,6 +1943,15 @@ function WeakAuras.Delete(data)
   if (WeakAuras.mouseFrame) then
     WeakAuras.mouseFrame:delete(id);
   end
+
+  WeakAuras.customActionsFunctions[id] = nil;
+  WeakAuras.customConditionsFunctions[id] = nil;
+
+  for event, funcs in pairs(dynamicConditions) do
+    funcs[id] = nil;
+  end
+
+  WeakAuras.frameLevels[id] = nil;
 end
 
 function WeakAuras.Rename(data, newid)
@@ -1749,7 +1964,7 @@ function WeakAuras.Rename(data, newid)
           parentData.controlledChildren[index] = newid;
         end
       end
-      if parentData.sortHybridTable then
+      if parentData.sortHybridTable and parentData.sortHybridTable[oldid] then
         parentData.sortHybridTable[newid] = true
         parentData.sortHybridTable[oldid] = nil
       end
@@ -1826,6 +2041,20 @@ function WeakAuras.Rename(data, newid)
   if (WeakAuras.mouseFrame) then
     WeakAuras.mouseFrame:rename(oldid, newid);
   end
+
+  WeakAuras.customActionsFunctions[newid] = WeakAuras.customActionsFunctions[oldid];
+  WeakAuras.customActionsFunctions[oldid] = nil;
+
+  WeakAuras.customConditionsFunctions[newid] = WeakAuras.customConditionsFunctions[oldid];
+  WeakAuras.customConditionsFunctions[oldid] = nil;
+
+  for event, funcs in pairs(dynamicConditions) do
+    funcs[newid] = funcs[oldid]
+    funcs[oldid] = nil;
+  end
+
+  WeakAuras.frameLevels[newid] = WeakAuras.frameLevels[oldid];
+  WeakAuras.frameLevels[oldid] = nil;
 
   WeakAuras.ProfileRenameAura(oldid, newid);
 end
@@ -2449,22 +2678,20 @@ function WeakAuras.AddMany(table)
       loaded[id] = true;
     end
   end
-  local dynGroups = {}
+  local groups = {}
   for id, data in pairs(idtable) do
     load(id, {});
-    if data.regionType == "dynamicgroup" then
-      dynGroups[id] = true
+    if data.regionType == "dynamicgroup" or data.regionType == "group" then
+      groups[data] = true
     end
   end
-  for id in pairs(dynGroups) do
-    regions[id].region:ControlChildren()
+  for data in pairs(groups) do
+    if data.type == "dynamicgroup" then
+      regions[data.id].region:ControlChildren()
+    else
+      WeakAuras.Add(data)
+    end
   end
-end
-
--- Dummy add function to protect errors from propagating out of the real add function
-function WeakAuras.Add(data)
-  WeakAuras.Modernize(data);
-  WeakAuras.pAdd(data);
 end
 
 local function removeSpellNames(data)
@@ -2475,12 +2702,16 @@ local function removeSpellNames(data)
     elseif(data.additional_triggers and data.additional_triggers[triggernum]) then
       trigger = data.additional_triggers[triggernum].trigger;
     end
+    if type(trigger.spellName) == "number" then
+      trigger.realSpellName = GetSpellInfo(trigger.spellName) or trigger.realSpellName
+    end
     if (trigger.spellId) then
       trigger.name = GetSpellInfo(trigger.spellId) or trigger.name;
     end
     if (trigger.spellIds) then
       for i = 1, 10 do
         if (trigger.spellIds[i]) then
+          trigger.names = trigger.names or {};
           trigger.names[i] = GetSpellInfo(trigger.spellIds[i]) or trigger.names[i];
         end
       end
@@ -2488,25 +2719,30 @@ local function removeSpellNames(data)
   end
 end
 
-function WeakAuras.pAdd(data)
+function WeakAuras.PreAdd(data)
+  WeakAuras.validate(data, WeakAuras.data_stub)
+  local default = data.regionType and WeakAuras.regionTypes[data.regionType] and WeakAuras.regionTypes[data.regionType].default
+  if default then
+    WeakAuras.validate(data, default)
+  end
+  WeakAuras.Modernize(data);
+  removeSpellNames(data)
+end
+
+local function pAdd(data)
   local id = data.id;
   if not(id) then
     error("Improper arguments to WeakAuras.Add - id not defined");
   elseif (data.controlledChildren) then
+    db.displays[id] = data;
     WeakAuras.SetRegion(data);
   else
-    if (data.activeTriggerMode >= data.numTriggers) then
+    if (not data.activeTriggerMode or data.activeTriggerMode >= data.numTriggers) then
       data.activeTriggerMode = WeakAuras.trigger_modes.first_active;
     end
 
     for _, triggerSystem in pairs(triggerSystems) do
       triggerSystem.Add(data);
-    end
-    local region = WeakAuras.SetRegion(data);
-    if (WeakAuras.clones[id]) then
-      for cloneId, _ in pairs(WeakAuras.clones[id]) do
-        WeakAuras.SetRegion(data, cloneId);
-      end
     end
 
     data.init_started = nil;
@@ -2523,7 +2759,7 @@ function WeakAuras.pAdd(data)
     WeakAuras.LoadCustomActionFunctions(data);
     WeakAuras.LoadConditionPropertyFunctions(data);
     local checkConditionsFuncStr = WeakAuras.ConstructConditionFunction(data);
-    local checkCondtionsFunc = checkConditionsFuncStr and WeakAuras.LoadFunction(checkConditionsFuncStr);
+    local checkCondtionsFunc = checkConditionsFuncStr and WeakAuras.LoadFunction(checkConditionsFuncStr, id);
     debug(id.." - Load", 1);
     debug(loadFuncStr);
 
@@ -2553,6 +2789,15 @@ function WeakAuras.pAdd(data)
       activatedConditions = {},
     };
 
+    db.displays[id] = data;
+
+    local region = WeakAuras.SetRegion(data);
+    if (WeakAuras.clones[id]) then
+      for cloneId, _ in pairs(WeakAuras.clones[id]) do
+        WeakAuras.SetRegion(data, cloneId);
+      end
+    end
+
     WeakAuras.LoadEncounterInitScripts(id);
 
     if not(paused) then
@@ -2562,7 +2807,12 @@ function WeakAuras.pAdd(data)
   end
 
   removeSpellNames(data);
-  db.displays[id] = data;
+end
+
+-- Dummy add function to protect errors from propagating out of the real add function
+function WeakAuras.Add(data)
+  WeakAuras.PreAdd(data)
+  pAdd(data);
 end
 
 function WeakAuras.SetRegion(data, cloneId)
@@ -2902,7 +3152,11 @@ function WeakAuras.UpdateAnimations()
     if(anim.alphaFunc) then
       local ok, alpha = xpcall(anim.alphaFunc, geterrorhandler(), progress, anim.startAlpha, anim.dAlpha);
       if (ok) then
-        anim.region:SetAlpha(alpha);
+        if (anim.region.SetAnimAlpha) then
+          anim.region:SetAnimAlpha(alpha);
+        else
+          anim.region:SetAlpha(alpha);
+        end
       end
     end
     if(anim.scaleFunc) then
@@ -2940,7 +3194,9 @@ function WeakAuras.UpdateAnimations()
             anim.region:SetPoint(anim.selfPoint, anim.anchor, anim.anchorPoint, anim.startX, anim.startY);
           end
         end
-        if(anim.startAlpha) then
+        if (anim.region.SetAnimAlpha) then
+          anim.region:SetAnimAlpha(nil);
+        elseif(anim.startAlpha) then
           anim.region:SetAlpha(anim.startAlpha);
         end
         if(anim.startWidth) then
@@ -3038,7 +3294,15 @@ function WeakAuras.Animate(namespace, data, type, anim, region, inverse, onFinis
         anim.translateType = anim.translateType or "straightTranslate";
         anim.translateFunc = anim_function_strings[anim.translateType]
       end
-      translateFunc = WeakAuras.LoadFunction("return " .. anim.translateFunc, id);
+      if (anim.translateFunc) then
+        translateFunc = WeakAuras.LoadFunction("return " .. anim.translateFunc, id);
+      else
+        if (region.SetOffsetAnim) then
+          region:SetOffsetAnim(0, 0);
+        else
+          region:SetPoint(selfPoint, anchor, anchorPoint, startX, startY);
+        end
+      end
     else
       if (region.SetOffsetAnim) then
         region:SetOffsetAnim(0, 0);
@@ -3051,16 +3315,32 @@ function WeakAuras.Animate(namespace, data, type, anim, region, inverse, onFinis
         anim.alphaType = anim.alphaType or "straight";
         anim.alphaFunc = anim_function_strings[anim.alphaType]
       end
-      alphaFunc = WeakAuras.LoadFunction("return " .. anim.alphaFunc, id);
+      if (anim.alphaFunc) then
+        alphaFunc = WeakAuras.LoadFunction("return " .. anim.alphaFunc, id);
+      else
+        if (region.SetAnimAlpha) then
+          region:SetAnimAlpha(nil);
+        else
+          region:SetAlpha(startAlpha);
+        end
+      end
     else
-      region:SetAlpha(startAlpha);
+      if (region.SetAnimAlpha) then
+        region:SetAnimAlpha(nil);
+      else
+        region:SetAlpha(startAlpha);
+      end
     end
     if(anim.use_scale) then
       if not(anim.scaleType == "custom" and anim.scaleFunc) then
         anim.scaleType = anim.scaleType or "straightScale";
         anim.scaleFunc = anim_function_strings[anim.scaleType]
       end
-      scaleFunc = WeakAuras.LoadFunction("return " .. anim.scaleFunc, id);
+      if (anim.scaleFunc) then
+        scaleFunc = WeakAuras.LoadFunction("return " .. anim.scaleFunc, id);
+      else
+        region:Scale(1, 1);
+      end
     elseif(region.Scale) then
       region:Scale(1, 1);
     end
@@ -3069,7 +3349,11 @@ function WeakAuras.Animate(namespace, data, type, anim, region, inverse, onFinis
         anim.rotateType = anim.rotateType or "straight";
         anim.rotateFunc = anim_function_strings[anim.rotateType]
       end
-      rotateFunc = WeakAuras.LoadFunction("return " .. anim.rotateFunc, id);
+      if (anim.rotateFunc) then
+        rotateFunc = WeakAuras.LoadFunction("return " .. anim.rotateFunc, id);
+      else
+        region:Rotate(startRotation);
+      end
     elseif(region.Rotate) then
       region:Rotate(startRotation);
     end
@@ -3078,7 +3362,11 @@ function WeakAuras.Animate(namespace, data, type, anim, region, inverse, onFinis
         anim.colorType = anim.colorType or "straightColor";
         anim.colorFunc = anim_function_strings[anim.colorType]
       end
-      colorFunc = WeakAuras.LoadFunction("return " .. anim.colorFunc, id);
+      if (anim.colorFunc) then
+        colorFunc = WeakAuras.LoadFunction("return " .. anim.colorFunc, id);
+      else
+        region:ColorAnim(nil);
+      end
     elseif(region.ColorAnim) then
       region:ColorAnim(nil);
     end
@@ -3182,7 +3470,11 @@ function WeakAuras.CancelAnimation(region, resetPos, resetAlpha, resetScale, res
       end
     end
     if(resetAlpha) then
-      anim.region:SetAlpha(anim.startAlpha);
+      if (anim.region.SetAnimAlpha) then
+        anim.region:SetAnimAlpha(nil);
+      else
+        anim.region:SetAlpha(anim.startAlpha);
+      end
     end
     if(resetScale) then
       if(anim.region.Scale) then
@@ -3374,11 +3666,19 @@ function WeakAuras.CorrectSpellName(input)
     else
       link = GetSpellLink(input);
     end
-    if(link) then
+    if(link) and link ~= "" then
       local itemId = link:match("spell:(%d+)");
       return tonumber(itemId);
     else
-      return nil;
+      for tier = 1, MAX_TALENT_TIERS do
+        for column = 1, NUM_TALENT_COLUMNS do
+          local _, _, _, _, _, spellId = GetTalentInfo(tier, column, 1)
+          local name = GetSpellInfo(spellId);
+          if name == input then
+            return spellId;
+          end
+        end
+      end
     end
   end
 end
@@ -3466,6 +3766,8 @@ function WeakAuras.GetAuraTooltipInfo(unit, index, filter)
   local tooltipSize = {};
   if(tooltipText) then
     for t in tooltipText:gmatch("(%d[%d%.,]*)") do
+      t = t:gsub(",", "");
+      t = t:gsub("%.", "");
       tinsert(tooltipSize, tonumber(t));
     end
   end
@@ -3660,19 +3962,32 @@ function WeakAuras.ValueToPath(data, path, value)
   end
 end
 
-function WeakAuras.FixGroupChildrenOrder()
-  for id, data in pairs(db.displays) do
-    if(data.controlledChildren) then
-      local frameLevel = 1;
-      for i=1, #data.controlledChildren do
-        local childRegion = WeakAuras.regions[data.controlledChildren[i]] and WeakAuras.regions[data.controlledChildren[i]].region;
-        if(childRegion) then
-          frameLevel = frameLevel + 4
-          childRegion:SetFrameLevel(frameLevel);
-        end
-      end
+function WeakAuras.FixGroupChildrenOrderForGroup(data)
+  local frameLevel = 5;
+  for i=1, #data.controlledChildren do
+    WeakAuras.SetFrameLevel(data.controlledChildren[i], frameLevel);
+    frameLevel = frameLevel + 4;
+  end
+end
+
+WeakAuras.frameLevels = {};
+function WeakAuras.SetFrameLevel(id, frameLevel)
+  if (WeakAuras.frameLevels[id] == frameLevel) then
+    return;
+  end
+  if (WeakAuras.regions[id] and WeakAuras.regions[id].region) then
+    WeakAuras.regions[id].region:SetFrameLevel(frameLevel);
+  end
+  if (clones[id]) then
+    for i,v in pairs(clones[id]) do
+      v:SetFrameLevel(frameLevel);
     end
   end
+  WeakAuras.frameLevels[id] = frameLevel;
+end
+
+function WeakAuras.GetFrameLevelFor(id)
+  return WeakAuras.frameLevels[id] or 5;
 end
 
 function WeakAuras.EnsureString(input)
@@ -3785,6 +4100,9 @@ function WeakAuras.RegisterTriggerSystem(types, triggerSystem)
 end
 
 function WeakAuras.GetTriggerStateForTrigger(id, triggernum)
+  if (triggernum == -1) then
+    return WeakAuras.GetGlobalConditionState();
+  end
   triggerState[id] = triggerState[id] or {}
   triggerState[id][triggernum] = triggerState[id][triggernum] or {}
   return triggerState[id][triggernum];
@@ -4092,12 +4410,18 @@ end
 local function ReplaceValuePlaceHolders(textStr, region, customFunc)
   local regionValues = region.values;
   local value;
-  if (textStr == "%c" and customFunc) then
-    WeakAuras.ActivateAuraEnvironment(region.id, region.cloneId, region.state);
-    local _;
-    _, value = xpcall(customFunc, geterrorhandler(), region.expirationTime, region.duration, regionValues.progress, regionValues.duration, regionValues.name, regionValues.icon, regionValues.stacks);
-    WeakAuras.ActivateAuraEnvironment(nil);
-    value = value or "";
+  if textStr:find("%%?c") then
+    if customFunc then
+      WeakAuras.ActivateAuraEnvironment(region.id, region.cloneId, region.state);
+      regionValues.custom = {select(2, xpcall(customFunc, geterrorhandler(), region.expirationTime, region.duration,
+            regionValues.progress, regionValues.duration, regionValues.name, regionValues.icon, regionValues.stacks))}
+      WeakAuras.ActivateAuraEnvironment(nil)
+    end
+    if not regionValues.custom then
+      return ""
+    end
+    local index = tonumber(textStr:match("%d+") or 1)
+    value = WeakAuras.EnsureString(regionValues.custom[index])
   else
     local variable = WeakAuras.dynamic_texts[textStr];
     if (not variable) then
@@ -4115,12 +4439,11 @@ function WeakAuras.ReplacePlaceHolders(textStr, region, customFunc)
   if (not regionState and not regionValues) then
     return;
   end
-
   -- We look backwards through the string
   -- Invariant currentPos - endPos is a ascii "alphabetic" string
   -- So on finding a "%" we extract  currentPos - endPos and depending
   -- on how long the string is look it up in regionState or in regionValues
-  -- textStr is in UTF-8 encoding. We assume all state variables are pure alphabetic strings
+  -- textStr is in UTF-8 encoding. We assume all state variables are pure alphanumeric strings
   local endPos = textStr:len();
   if (endPos < 2) then
     textStr = textStr:gsub("\\n", "\n");
@@ -4147,20 +4470,28 @@ function WeakAuras.ReplacePlaceHolders(textStr, region, customFunc)
         if (value) then
           textStr = string.sub(textStr, 1, currentPos - 1) .. value .. string.sub(textStr, endPos + 1);
         end
-    elseif (endPos > currentPos and regionState) then
-      local symbol = string.sub(textStr, currentPos + 1, endPos);
-      local value = regionState[symbol] and tostring(regionState[symbol]);
-      if (value) then
-        textStr = string.sub(textStr, 1, currentPos - 1) .. value .. string.sub(textStr, endPos + 1);
-      else
-        value = ReplaceValuePlaceHolders(string.sub(textStr, currentPos, currentPos + 1), region, customFunc);
-        value = value or "";
-        textStr = string.sub(textStr, 1, currentPos - 1) .. value .. string.sub(textStr, currentPos + 2);
+      elseif (endPos > currentPos) then
+        local symbol = string.sub(textStr, currentPos + 1, endPos);
+        local value
+        if symbol:find("^c%d*$") and regionValues then -- custom value
+          value = ReplaceValuePlaceHolders(symbol, region, customFunc)
+          if value then
+            textStr = string.sub(textStr, 1, currentPos - 1) .. value .. string.sub(textStr, endPos + 1);
+          end
+        elseif regionState then -- state value
+          value = regionState[symbol] and tostring(regionState[symbol]);
+          if (value) then
+            textStr = string.sub(textStr, 1, currentPos - 1) .. value .. string.sub(textStr, endPos + 1);
+          else
+            value = ReplaceValuePlaceHolders(string.sub(textStr, currentPos, currentPos + 1), region, customFunc);
+            value = value or "";
+            textStr = string.sub(textStr, 1, currentPos - 1) .. value .. string.sub(textStr, currentPos + 2);
+          end
+        end
       end
-    end
-    endPos = currentPos - 1;
-    elseif (char >= 65 and char <= 90) or (char >= 97 and char <= 122) then
-    -- a-zA-Z character
+      endPos = currentPos - 1;
+    elseif (char >= 48 and char <= 57) or (char >= 65 and char <= 90) or (char >= 97 and char <= 122) then
+      -- 0-9a-zA-Z character
     else
       endPos = currentPos - 1;
     end
@@ -4721,11 +5052,12 @@ function WeakAuras.ProfileRenameAura(oldid, id)
 end
 
 function WeakAuras.StartProfile()
-  prettyPrint(L["Profiling started."])
   if (profileData.systems.time and profileData.systems.time.count == 1) then
     prettyPrint(L["Profiling already started."]);
     return;
   end
+
+  prettyPrint(L["Profiling started."])
 
   profileData.systems = {};
   profileData.auras = {};
@@ -4743,11 +5075,12 @@ local function doNothing()
 end
 
 function WeakAuras.StopProfile()
-  prettyPrint(L["Profiling stopped."])
-  if (not profileData.systems.time or not profileData.systems.time.count == 1) then
+  if (not profileData.systems.time or profileData.systems.time.count ~= 1) then
     prettyPrint(L["Profiling not running."]);
     return;
   end
+
+  prettyPrint(L["Profiling stopped."])
 
   profileData.systems.time.elapsed = debugprofilestop() - profileData.systems.time.start;
   profileData.systems.time.count = 0;
@@ -4823,4 +5156,15 @@ function WeakAuras.PrintProfile()
     PrintOneProfile(k, profileData.auras[k], total);
   end
   print("--------------------------------");
+end
+
+function WeakAuras.FindUnusedId(prefix)
+  prefix = prefix or "New"
+  local num = 2;
+  local id = prefix
+  while(db.displays[id]) do
+    id = prefix .. " " .. num;
+    num = num + 1;
+  end
+  return id
 end

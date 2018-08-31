@@ -161,9 +161,11 @@ local function BuildHubPanel(panel)
 	--panel.WidgetsAuraMode =  CreateQuickDropdown(objectName.."WidgetsAuraMode", "Filter Mode:", AuraWidgetModes, 1, AlignmentColumn, panel.WidgetsDebuffStyle, 16)		-- used to be WidgetsDebuffMode
 
 	panel.WidgetsMyDebuff = CreateQuickCheckbutton(objectName.."WidgetsMyDebuff", "包括我的Debuffs", AlignmentColumn, panel.WidgetsDebuff, 16)
-	panel.WidgetsMyBuff = CreateQuickCheckbutton(objectName.."WidgetsMyBuff", "包括我的Buffs", AlignmentColumn, panel.WidgetsMyDebuff, 16)
+	-- panel.WidgetsMyBuff = CreateQuickCheckbutton(objectName.."WidgetsMyBuff", "包括我的Buffs", AlignmentColumn, panel.WidgetsMyDebuff, 16)
+    panel.WidgetsHostileBuff = CreateQuickCheckbutton(objectName.."WidgetsHostileBuff", "包括敌方的Buffs", AlignmentColumn, panel.WidgetsMyDebuff, 16)
+    panel.WidgetsHostileBuffStealableOnly2 = CreateQuickCheckbutton(objectName.."WidgetsHostileBuffStealableOnly2", "仅包括可进攻驱散或可偷取的", AlignmentColumn, panel.WidgetsHostileBuff, 32)
 
-	panel.WidgetsDebuffListLabel = CreateQuickItemLabel(nil, "额外的光环:", AlignmentColumn, panel.WidgetsMyBuff, 16)
+	panel.WidgetsDebuffListLabel = CreateQuickItemLabel(nil, "额外的光环:", AlignmentColumn, panel.WidgetsHostileBuffStealableOnly2, 16)
 	panel.WidgetsDebuffTrackList = CreateQuickEditbox(objectName.."WidgetsDebuffTrackList", AlignmentColumn, panel.WidgetsDebuffListLabel, 16)
 
 	panel.WidgetsDebuffStyle =  CreateQuickDropdown(objectName.."WidgetsDebuffStyle", "图标样式:", DebuffStyles, 1, AlignmentColumn, panel.WidgetsDebuffTrackList, 16)
@@ -319,9 +321,9 @@ local function BuildHubPanel(panel)
     -- Column 1
 	panel.ThreatLabel = CreateQuickHeadingLabel(nil, "威胁", AlignmentColumn, L, 0, 5)
 	panel.ThreatWarningMode =  CreateQuickDropdown(objectName.."ThreatWarningMode", "威胁模式:", ThreatWarningModes, 1, AlignmentColumn, panel.ThreatLabel, 0, 2)
-	panel.ThreatGlowEnable = CreateQuickCheckbutton(objectName.."ThreatGlowEnable", "开启发光警告", AlignmentColumn, panel.ThreatWarningMode,0)
+	panel.ThreatGlowEnable2 = CreateQuickCheckbutton(objectName.."ThreatGlowEnable2", "开启发光警告", AlignmentColumn, panel.ThreatWarningMode,0)
 
-	panel.ColorThreatColorLabels = CreateQuickItemLabel(nil, "威胁颜色:", AlignmentColumn, panel.ThreatGlowEnable, 0, 2)
+	panel.ColorThreatColorLabels = CreateQuickItemLabel(nil, "威胁颜色:", AlignmentColumn, panel.ThreatGlowEnable2, 0, 2)
 	panel.ColorThreatWarning = CreateQuickColorbox(objectName.."ColorThreatWarning", "警告", AlignmentColumn, panel.ColorThreatColorLabels , 16)
 	panel.ColorThreatTransition = CreateQuickColorbox(objectName.."ColorThreatTransition", "转变", AlignmentColumn, panel.ColorThreatWarning , 16)
 	panel.ColorThreatSafe = CreateQuickColorbox(objectName.."ColorThreatSafe", "安全", AlignmentColumn, panel.ColorThreatTransition, 16)
@@ -481,31 +483,34 @@ local function BuildHubPanel(panel)
 	--panel:Hide()
 end
 
-
--- Create Instances of Panels
-local TankPanel = CreateHubInterfacePanel( "HubPanelSettingsTank", "|cFF3782D1坦克", "Tidy Plates" )
 TidyPlatesPanel:AddProfile("Tank")
-BuildHubPanel(TankPanel)
-function ShowTidyPlatesHubTankPanel() TidyPlatesUtility.OpenInterfacePanel(TankPanel) end
-
-
-local DamagePanel = CreateHubInterfacePanel( "HubPanelSettingsDamage", "|cFFFF1100输出", "Tidy Plates" )
 TidyPlatesPanel:AddProfile("Damage")
-BuildHubPanel(DamagePanel)
-function ShowTidyPlatesHubDamagePanel() TidyPlatesUtility.OpenInterfacePanel(DamagePanel) end
-
-
-
-local HealerPanel = CreateHubInterfacePanel( "HubPanelSettingsHealer", "|cFF44DD55治疗", "Tidy Plates"  )
 TidyPlatesPanel:AddProfile("Healer")
-BuildHubPanel(HealerPanel)
-function ShowTidyPlatesHubHealerPanel() TidyPlatesUtility.OpenInterfacePanel(HealerPanel) end
-
-
-local GladiatorPanel = CreateHubInterfacePanel( "HubPanelSettingsGladiator", "|cFFAA6600竞技场", "Tidy Plates"  )
 TidyPlatesPanel:AddProfile("Gladiator")
-BuildHubPanel(GladiatorPanel)
-function ShowTidyPlatesHubGladiatorPanel() TidyPlatesUtility.OpenInterfacePanel(GladiatorPanel) end
+
+-- 8.0 会导致缩放界面很慢，需要时再创建（而且创建很慢，加载的时候明显卡顿）
+local function CreateOptionsPanels()
+    -- Create Instances of Panels
+    local TankPanel = CreateHubInterfacePanel( "HubPanelSettingsTank", "|cFF3782D1坦克", "Tidy Plates" )
+    BuildHubPanel(TankPanel)
+    function ShowTidyPlatesHubTankPanel() TidyPlatesUtility.OpenInterfacePanel(TankPanel) end
+
+
+    local DamagePanel = CreateHubInterfacePanel( "HubPanelSettingsDamage", "|cFFFF1100输出", "Tidy Plates" )
+    BuildHubPanel(DamagePanel)
+    function ShowTidyPlatesHubDamagePanel() TidyPlatesUtility.OpenInterfacePanel(DamagePanel) end
+
+
+
+    local HealerPanel = CreateHubInterfacePanel( "HubPanelSettingsHealer", "|cFF44DD55治疗", "Tidy Plates"  )
+    BuildHubPanel(HealerPanel)
+    function ShowTidyPlatesHubHealerPanel() TidyPlatesUtility.OpenInterfacePanel(HealerPanel) end
+
+
+    local GladiatorPanel = CreateHubInterfacePanel( "HubPanelSettingsGladiator", "|cFFAA6600竞技场", "Tidy Plates"  )
+    BuildHubPanel(GladiatorPanel)
+    function ShowTidyPlatesHubGladiatorPanel() TidyPlatesUtility.OpenInterfacePanel(GladiatorPanel) end
+end
 
 
 
@@ -514,6 +519,7 @@ function ShowTidyPlatesHubGladiatorPanel() TidyPlatesUtility.OpenInterfacePanel(
 ---------------------------------------------
 
 function ShowTidyPlatesHubPanel()
+    if CreateOptionsPanels then CreateOptionsPanels() CreateOptionsPanels = nil end
 	local profile = TidyPlatesOptions.ActiveProfile
 	if profile == "Tank" then
 		ShowTidyPlatesHubTankPanel()

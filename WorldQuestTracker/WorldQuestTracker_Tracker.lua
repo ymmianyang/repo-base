@@ -99,9 +99,9 @@ function WorldQuestTracker.AddQuestTomTom (questID, mapID, noRemove)
 end
 
 --adiciona uma quest ao tracker
-function WorldQuestTracker.AddQuestToTracker (self)
+function WorldQuestTracker.AddQuestToTracker (self, questID, mapID)
 	
-	local questID = self.questID
+	questID = self.questID or questID
 	
 	if (not HaveQuestData (questID)) then
 		WorldQuestTracker:Msg (L["S_ERROR_NOTLOADEDYET"])
@@ -109,7 +109,8 @@ function WorldQuestTracker.AddQuestToTracker (self)
 	end
 	
 	if (WorldQuestTracker.db.profile.tomtom.enabled and TomTom and IsAddOnLoaded ("TomTom")) then
-		return WorldQuestTracker.AddQuestTomTom (self.questID, self.mapID)
+		WorldQuestTracker.AddQuestTomTom (self.questID, self.mapID or mapID)
+		return true
 	end
 	
 	if (WorldQuestTracker.IsQuestBeingTracked (questID)) then
@@ -581,6 +582,7 @@ local buildTooltip = function (self)
 --		GameTooltip:SetHeight (GameTooltip:GetHeight() + GameTooltip.ItemTooltip:GetHeight())
 --	end
 end
+WorldQuestTracker.BuildTooltip = buildTooltip
 
 local TrackerFrameOnEnter = function (self)
 	local color = OBJECTIVE_TRACKER_COLOR["HeaderHighlight"]
